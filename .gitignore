@@ -1,0 +1,11 @@
+# Keep environment variables out of version control
+# .env
+# .env.*
+venv/
+.idx/
+
+# Python add ons
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
