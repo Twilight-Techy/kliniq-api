@@ -10,7 +10,7 @@ from passlib.context import CryptContext
 from jwt.exceptions import DecodeError, ExpiredSignatureError
 
 from src.common.config import settings
-from src.common.utils.email_service import send_email, send_verification_email
+from src.common.utils.email_service import send_verification_email, send_password_reset_email, send_password_reset_confirmation_email
 from src.common.utils.otp import generate_verification_code
 from src.models.models import User, UserRole, Patient, Clinician, ClinicianRoleType
 from src.auth.schemas import SignupRole
@@ -330,17 +330,12 @@ async def process_forgot_password(
         reset_token = create_reset_token(email, expires_delta=timedelta(minutes=30))
         reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?token={reset_token}"
         
-        subject = "Password Reset Request"
-        text_body = f"Click the link below to reset your password:\n{reset_link}"
-        html_body = f"""
-        <p>Hi {user.first_name},</p>
-        <p>Click the link below to reset your password:</p>
-        <a href="{reset_link}">Reset Password</a>
-        <p>This link expires in 30 minutes.</p>
-        <p>If you didn't request this, please ignore this email.</p>
-        """
-        
-        background_tasks.add_task(send_email, subject, text_body, [email], html_body=html_body)
+        background_tasks.add_task(
+            send_password_reset_email,
+            email,
+            user.first_name,
+            reset_link
+        )
     
     return True
 
@@ -372,14 +367,11 @@ async def reset_password(
     await db.refresh(user)
 
     # Send notification email
-    subject = "Your Password Has Been Reset"
-    text_body = "Your password has been successfully reset. If you did not initiate this, please contact support immediately."
-    html_body = f"""
-    <p>Hi {user.first_name},</p>
-    <p>Your password has been successfully reset.</p>
-    <p>If you did not initiate this reset, please <a href="{settings.SUPPORT_URL}">contact support</a> immediately.</p>
-    """
-    background_tasks.add_task(send_email, subject, text_body, [user.email], html_body=html_body)
+    background_tasks.add_task(
+        send_password_reset_confirmation_email,
+        user.email,
+        user.first_name
+    )
 
     return True
 
@@ -404,13 +396,10 @@ async def change_password(
     await db.refresh(user)
 
     # Send notification email
-    subject = "Your Password Has Been Changed"
-    text_body = "Your password has been successfully changed. If you did not perform this action, please contact support immediately."
-    html_body = f"""
-    <p>Hi {user.first_name},</p>
-    <p>Your password has been successfully changed.</p>
-    <p>If you did not perform this action, please <a href="{settings.SUPPORT_URL}">contact support</a> immediately.</p>
-    """
-    background_tasks.add_task(send_email, subject, text_body, [user.email], html_body=html_body)
+    background_tasks.add_task(
+        send_password_reset_confirmation_email,
+        user.email,
+        user.first_name
+    )
 
     return True
