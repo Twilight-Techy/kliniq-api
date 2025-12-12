@@ -133,6 +133,13 @@ class MessageType(enum.Enum):
     AUDIO = "audio"
 
 
+class PreferredLanguage(enum.Enum):
+    ENGLISH = "english"
+    HAUSA = "hausa"
+    IGBO = "igbo"
+    YORUBA = "yoruba"
+
+
 class NotificationType(enum.Enum):
     APPOINTMENT = "appointment"
     PRESCRIPTION = "prescription"
@@ -182,6 +189,8 @@ class Patient(Base):
     emergency_contact_phone = Column(String(20), nullable=True)
     insurance_provider = Column(String(200), nullable=True)
     insurance_number = Column(String(100), nullable=True)
+    preferred_language = Column(SAEnum(PreferredLanguage), nullable=True)
+    onboarding_completed = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
