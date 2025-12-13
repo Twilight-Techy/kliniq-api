@@ -191,6 +191,12 @@ class Patient(Base):
     insurance_number = Column(String(100), nullable=True)
     preferred_language = Column(SAEnum(PreferredLanguage), nullable=True)
     onboarding_completed = Column(Boolean, default=False, nullable=False)
+    notification_settings = Column(
+        JSONB, 
+        nullable=True, 
+        default={"appointments": True, "messages": True, "reminders": True, "updates": False},
+        server_default='{"appointments": true, "messages": true, "reminders": true, "updates": false}'
+    )
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
