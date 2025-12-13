@@ -12,11 +12,12 @@ engine = create_async_engine(
     echo=settings.DEBUG, 
     future=True, 
     pool_pre_ping=True, 
-    pool_recycle=300,  # Recycle connections more frequently
-    connect_args={
-        "prepared_statement_cache_size": 0,  # Disable asyncpg prepared statement cache
-        "statement_cache_size": 0,  # Disable statement cache
-    },
+    pool_recycle=1800,
+    # pool_recycle=300,  # Recycle connections more frequently
+    # connect_args={
+    #     "prepared_statement_cache_size": 0,  # Disable asyncpg prepared statement cache
+    #     "statement_cache_size": 0,  # Disable statement cache
+    # },
 )
 
 async_session = sessionmaker(

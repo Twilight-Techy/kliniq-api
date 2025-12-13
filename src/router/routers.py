@@ -6,6 +6,7 @@ from src.modules.user.user_controller import router as user_router
 from src.modules.onboarding.onboarding_controller import router as onboarding_router
 from src.modules.dashboard.dashboard_controller import router as dashboard_router
 from src.modules.appointments.appointments_controller import router as appointments_router
+from src.modules.recordings.recordings_controller import router as recordings_router
 
 def include_routers(app: FastAPI) -> None:
     """Include all API routers in the FastAPI application."""
@@ -14,6 +15,7 @@ def include_routers(app: FastAPI) -> None:
     app.include_router(onboarding_router)
     app.include_router(dashboard_router)
     app.include_router(appointments_router)
+    app.include_router(recordings_router)
     
     # TODO: Add new Kliniq module routers here as they are created
     # app.include_router(hospital_router)
