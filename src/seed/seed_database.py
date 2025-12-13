@@ -137,8 +137,13 @@ COMMON_SYMPTOMS = [
 async def create_hospitals(session: AsyncSession) -> List[Hospital]:
     """Create sample hospitals"""
     hospitals = []
-    for name, h_type, address, city, state in HOSPITALS_DATA:
+    for idx, (name, h_type, address, city, state) in enumerate(HOSPITALS_DATA, 1):
+        # Generate hospital code like HOSP-LUTH-001
+        code_name = ''.join(word[0:4].upper() for word in name.split()[:2])
+        hospital_code = f"HOSP-{code_name}-{idx:03d}"
+        
         hospital = Hospital(
+            hospital_code=hospital_code,
             name=name,
             type=h_type,
             address=address,
@@ -265,8 +270,13 @@ async def create_patients(session: AsyncSession) -> tuple[List[User], List[Patie
     patients = []
     
     for i in range(30):
-        first_name = random.choice(NIGERIAN_FIRST_NAMES)
-        last_name = random.choice(NIGERIAN_LAST_NAMES)
+        # First patient has fixed name for predictable test credentials
+        if i == 0:
+            first_name = "Test"
+            last_name = "Patient"
+        else:
+            first_name = random.choice(NIGERIAN_FIRST_NAMES)
+            last_name = random.choice(NIGERIAN_LAST_NAMES)
         city, state = random.choice(NIGERIAN_CITIES)
         
         # Create user
@@ -436,7 +446,7 @@ async def create_triage_cases(
             symptoms=random.choice(COMMON_SYMPTOMS),
             duration=random.choice(["1-2 days", "3-5 days", "1 week", "Over a week"]),
             urgency=random.choice(list(TriageUrgency)),
-            language=random.choice(["English", "Yoruba", "Hausa", "Igbo"]),
+            language=random.choice(list(PreferredLanguage)),
             status=random.choice(list(TriageStatus)),
             ai_summary="AI-generated symptom analysis and recommendations.",
             nurse_notes="Initial assessment completed." if random.random() > 0.5 else None,
@@ -582,7 +592,7 @@ async def seed_database(clear: bool = False):
             print("-" * 40)
             print("Admin:     admin@kliniq.ng / Admin@123")
             print("Clinician: oluwaseun.adeyemi0@kliniq.ng / Clinician@123")
-            print("Patient:   oluwaseun.adeyemi0@gmail.com / Patient@123")
+            print("Patient:   test.patient0@gmail.com / Patient@123")
             print("-" * 40 + "\n")
             
         except Exception as e:

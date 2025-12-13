@@ -5,12 +5,18 @@ from sqlalchemy.orm import sessionmaker
 from src.common.config import settings  # Import the settings object
 
 # SQLAlchemy async engine and session setup
+# Disable prepared statement caching to avoid InvalidCachedStatementError after schema changes
+# This is especially important with Neon's connection pooler
 engine = create_async_engine(
     settings.DATABASE_URL, 
     echo=settings.DEBUG, 
     future=True, 
     pool_pre_ping=True, 
-    pool_recycle=1800,
+    pool_recycle=300,  # Recycle connections more frequently
+    connect_args={
+        "prepared_statement_cache_size": 0,  # Disable asyncpg prepared statement cache
+        "statement_cache_size": 0,  # Disable statement cache
+    },
 )
 
 async_session = sessionmaker(

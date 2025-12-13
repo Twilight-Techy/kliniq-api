@@ -236,6 +236,7 @@ class Hospital(Base):
     __tablename__ = "hospitals"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
+    hospital_code = Column(String(20), unique=True, nullable=False, index=True)  # e.g., HOSP-LUTH-001
     name = Column(String(255), nullable=False)
     type = Column(SAEnum(HospitalType), nullable=False, default=HospitalType.GENERAL)
     address = Column(Text, nullable=False)
@@ -426,7 +427,7 @@ class TriageCase(Base):
     symptoms = Column(Text, nullable=False)
     duration = Column(String(100), nullable=True)
     urgency = Column(SAEnum(TriageUrgency), nullable=False, default=TriageUrgency.MEDIUM)
-    language = Column(String(50), nullable=True)
+    language = Column(SAEnum(PreferredLanguage), nullable=True, default=PreferredLanguage.ENGLISH)
     status = Column(SAEnum(TriageStatus), default=TriageStatus.PENDING, nullable=False)
     ai_summary = Column(Text, nullable=True)
     nurse_notes = Column(Text, nullable=True)
@@ -446,6 +447,32 @@ class TriageCase(Base):
 
     def __repr__(self):
         return f"<TriageCase(id={self.id}, status={self.status.value})>"
+
+
+class TriageChat(Base):
+    """Stores AI chat conversations for patients."""
+    __tablename__ = "triage_chats"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
+    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
+    triage_case_id = Column(UUID(as_uuid=True), ForeignKey("triage_cases.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String(255), nullable=True)  # Auto-generated from first message
+    messages = Column(JSONB, nullable=False, default=list)  # [{role, content, timestamp}]
+    language = Column(SAEnum(PreferredLanguage), nullable=True, default=PreferredLanguage.ENGLISH)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    patient = relationship("Patient", backref=backref("triage_chats", lazy="dynamic", cascade="all, delete-orphan"))
+    triage_case = relationship("TriageCase", backref=backref("chats", lazy="dynamic"))
+
+    __table_args__ = (
+        Index("idx_triage_chat_patient", "patient_id"),
+    )
+
+    def __repr__(self):
+        return f"<TriageChat(id={self.id}, patient_id={self.patient_id})>"
 
 
 class EscalatedQuery(Base):
