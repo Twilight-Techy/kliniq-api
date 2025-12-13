@@ -612,55 +612,6 @@ class Report(Base):
         return f"<Report(id={self.id}, title={self.title}, type={self.type.value})>"
 
 
-# ============================================================================
-# COMMUNICATION MODELS
-# ============================================================================
-
-class Conversation(Base):
-    __tablename__ = "conversations"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    participant_1_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    participant_2_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    last_message_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-    # Relationships
-    participant_1 = relationship("User", foreign_keys=[participant_1_id], backref=backref("conversations_as_p1", lazy="dynamic"))
-    participant_2 = relationship("User", foreign_keys=[participant_2_id], backref=backref("conversations_as_p2", lazy="dynamic"))
-
-    __table_args__ = (
-        UniqueConstraint("participant_1_id", "participant_2_id", name="uq_conversation_participants"),
-    )
-
-    def __repr__(self):
-        return f"<Conversation(id={self.id})>"
-
-
-class Message(Base):
-    __tablename__ = "messages"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
-    sender_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    content = Column(Text, nullable=False)
-    message_type = Column(SAEnum(MessageType), default=MessageType.TEXT, nullable=False)
-    attachment_url = Column(String(500), nullable=True)
-    is_read = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-    # Relationships
-    conversation = relationship("Conversation", backref=backref("messages", lazy="dynamic", cascade="all, delete-orphan"))
-    sender = relationship("User", backref=backref("sent_messages", lazy="dynamic"))
-
-    __table_args__ = (
-        Index("idx_messages_conversation", "conversation_id"),
-    )
-
-    def __repr__(self):
-        return f"<Message(id={self.id}, type={self.message_type.value})>"
-
-
 class Notification(Base):
     __tablename__ = "notifications"
 
@@ -684,3 +635,65 @@ class Notification(Base):
 
     def __repr__(self):
         return f"<Notification(id={self.id}, title={self.title})>"
+
+
+# ============================================================================
+# MESSAGING MODELS
+# ============================================================================
+
+class Conversation(Base):
+    """
+    A conversation between two users (can be patient-clinician, clinician-clinician, etc.).
+    Uses User IDs to allow any user type to message any other user type.
+    """
+    __tablename__ = "conversations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
+    participant_1_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    participant_2_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    last_message_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    # Relationships - use explicit foreign_keys to avoid ambiguity
+    participant_1 = relationship("User", foreign_keys=[participant_1_id], backref=backref("conversations_as_p1", lazy="dynamic"))
+    participant_2 = relationship("User", foreign_keys=[participant_2_id], backref=backref("conversations_as_p2", lazy="dynamic"))
+
+    __table_args__ = (
+        Index("idx_conversations_participant_1", "participant_1_id"),
+        Index("idx_conversations_participant_2", "participant_2_id"),
+        UniqueConstraint("participant_1_id", "participant_2_id", name="uq_conversation_participants"),
+        Index("idx_conversations_updated", "updated_at"),
+    )
+
+    def __repr__(self):
+        return f"<Conversation(id={self.id}, p1={self.participant_1_id}, p2={self.participant_2_id})>"
+
+
+class Message(Base):
+    """A message within a conversation."""
+    __tablename__ = "messages"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    sender_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    content = Column(Text, nullable=False)
+    message_type = Column(SAEnum(MessageType), default=MessageType.TEXT, nullable=False)
+    is_read = Column(Boolean, default=False, nullable=False)
+    attachment_url = Column(String(500), nullable=True)
+    attachment_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    # Relationships
+    conversation = relationship("Conversation", backref=backref("messages", lazy="dynamic", cascade="all, delete-orphan", order_by="Message.created_at"))
+    sender = relationship("User", backref=backref("sent_messages", lazy="dynamic"))
+
+    __table_args__ = (
+        Index("idx_messages_conversation", "conversation_id"),
+        Index("idx_messages_conversation_created", "conversation_id", "created_at"),
+        Index("idx_messages_unread", "conversation_id", "is_read"),
+        Index("idx_messages_sender", "sender_id"),
+    )
+
+    def __repr__(self):
+        return f"<Message(id={self.id}, conversation_id={self.conversation_id}, sender_id={self.sender_id})>"

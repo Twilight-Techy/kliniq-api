@@ -677,6 +677,94 @@ async def clear_database(session: AsyncSession):
     print("✓ Database cleared")
 
 
+async def create_conversations_and_messages(
+    session: AsyncSession,
+    patient_users: List[User],
+    clinician_users: List[User]
+) -> tuple[List[Conversation], List[Message]]:
+    """Create sample conversations and messages between patients and clinicians."""
+    conversations = []
+    messages = []
+    
+    sample_message_exchanges = [
+        [
+            ("Good morning Doctor, I need to discuss my recent test results.", "patient"),
+            ("Good morning! I've reviewed your results and they look quite good. Your cholesterol levels have improved since last time.", "clinician"),
+            ("That's great news! Should I continue with the current medication?", "patient"),
+            ("Yes, please continue. I'd like to schedule a follow-up in 3 months.", "clinician"),
+            ("Thank you Doctor. I'll book the appointment.", "patient"),
+        ],
+        [
+            ("Hello, I've been experiencing headaches for the past few days.", "patient"),
+            ("I'm sorry to hear that. Can you describe the headache? Where exactly is the pain?", "clinician"),
+            ("It's mostly on the right side of my head, throbbing pain.", "patient"),
+            ("Have you been experiencing any stress lately? Getting enough sleep?", "clinician"),
+            ("Work has been quite stressful, and I haven't been sleeping well.", "patient"),
+            ("That could be tension headaches. Try to rest more and I'll prescribe a mild pain reliever.", "clinician"),
+        ],
+        [
+            ("Doctor, my child has been running a fever since yesterday.", "patient"),
+            ("What's the temperature reading? Any other symptoms?", "clinician"),
+            ("38.5°C. She also has a runny nose and slight cough.", "patient"),
+            ("This sounds like a viral infection. Keep her hydrated and give her paracetamol for the fever.", "clinician"),
+            ("Thank you. Should I bring her in if it doesn't improve?", "patient"),
+            ("Yes, if the fever persists for more than 3 days or exceeds 39°C, please come in immediately.", "clinician"),
+        ],
+        [
+            ("Hello, I'd like to request a medical certificate for work.", "patient"),
+            ("Of course. Were you unwell or is this for a general check-up?", "clinician"),
+            ("I had malaria last week and was advised to rest.", "patient"),
+            ("I see that in your records. I'll prepare the certificate. You can collect it tomorrow.", "clinician"),
+            ("Thank you very much!", "patient"),
+        ],
+        [
+            ("Good afternoon, I have some questions about my medication.", "patient"),
+            ("Good afternoon! Please go ahead.", "clinician"),
+            ("The metformin is causing some stomach upset. Is this normal?", "patient"),
+            ("That's a common side effect initially. Take it with food to reduce discomfort. It usually improves after a few weeks.", "clinician"),
+            ("Okay, I'll try that. Thank you for the advice.", "patient"),
+        ],
+    ]
+    
+    # Create conversations for first 15 patients with random clinicians
+    for i, patient_user in enumerate(patient_users[:15]):
+        clinician_user = clinician_users[i % len(clinician_users)]
+        
+        # Create conversation (smaller ID first for consistency)
+        p1_id, p2_id = (patient_user.id, clinician_user.id) if str(patient_user.id) < str(clinician_user.id) else (clinician_user.id, patient_user.id)
+        
+        conversation = Conversation(
+            participant_1_id=p1_id,
+            participant_2_id=p2_id,
+            last_message_at=datetime.utcnow() - timedelta(hours=random.randint(1, 72))
+        )
+        session.add(conversation)
+        await session.flush()
+        conversations.append(conversation)
+        
+        # Add messages for this conversation
+        exchange = sample_message_exchanges[i % len(sample_message_exchanges)]
+        base_time = datetime.utcnow() - timedelta(days=random.randint(1, 7))
+        
+        for j, (content, sender_type) in enumerate(exchange):
+            sender_id = patient_user.id if sender_type == "patient" else clinician_user.id
+            
+            message = Message(
+                conversation_id=conversation.id,
+                sender_id=sender_id,
+                content=content,
+                message_type=MessageType.TEXT,
+                is_read=j < len(exchange) - 1,  # Last message unread
+                created_at=base_time + timedelta(minutes=j * random.randint(2, 15))
+            )
+            session.add(message)
+            messages.append(message)
+    
+    await session.flush()
+    print(f"✓ Created {len(conversations)} conversations with {len(messages)} messages")
+    return conversations, messages
+
+
 async def seed_database(clear: bool = False):
     """Main seeding function"""
     print("\n" + "=" * 60)
@@ -705,6 +793,7 @@ async def seed_database(clear: bool = False):
             await create_triage_chats(session, patients)
             await create_invoices(session, hospitals)
             await create_notifications(session, patient_users, clinician_users)
+            await create_conversations_and_messages(session, patient_users, clinician_users)
             
             await session.commit()
             
