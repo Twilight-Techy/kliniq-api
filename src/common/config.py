@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str
     CONTACT_RECIPIENT: str
 
+    # LLM / Modal settings
+    MODAL_ENDPOINT_URL: str = ""  # Will be set after Modal deployment
+
     # Uncomment if you want to support comma-separated ALLOWED_ORIGINS strings
     @field_validator("ALLOWED_ORIGINS", mode="before")
     def split_origins(cls, value):
