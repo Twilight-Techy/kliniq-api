@@ -27,7 +27,8 @@ from src.models.models import (
     Hospital, HospitalType, SubscriptionPlan, Department, PatientHospital,
     AppointmentRequest, Appointment, AppointmentType, AppointmentStatus,
     RequestStatus, UrgencyLevel, Recording, RecordingStatus,
-    MedicalHistory, MedicalHistoryType, TriageCase, TriageStatus, TriageUrgency,
+    MedicalHistory, MedicalHistoryType, HealthVitals,
+    TriageCase, TriageStatus, TriageUrgency, TriageChat,
     EscalatedQuery, EscalatedQueryStatus, ClinicianPoints,
     Invoice, InvoiceStatus, Report, ReportType, ReportStatus,
     Conversation, Message, MessageType, Notification, NotificationType,
@@ -461,6 +462,125 @@ async def create_triage_cases(
     return cases
 
 
+async def create_recordings(
+    session: AsyncSession,
+    patients: List[Patient],
+    clinicians: List[Clinician],
+    appointments: List[Appointment]
+) -> List[Recording]:
+    """Create sample consultation recordings"""
+    recordings = []
+    doctors = [c for c in clinicians if c.role_type == ClinicianRoleType.DOCTOR]
+    
+    recording_titles = [
+        "Follow-up consultation",
+        "Initial consultation",
+        "Medication review",
+        "Test results discussion",
+        "Treatment plan review",
+        "Symptom assessment",
+        "Health check-up",
+        "Post-surgery follow-up"
+    ]
+    
+    for patient in patients[:20]:  # First 20 patients have recordings
+        # Create 1-3 recordings per patient
+        for _ in range(random.randint(1, 3)):
+            appointment = random.choice(appointments) if appointments else None
+            recording = Recording(
+                patient_id=patient.id,
+                clinician_id=random.choice(doctors).id,
+                appointment_id=appointment.id if appointment else None,
+                title=random.choice(recording_titles),
+                duration_seconds=random.randint(180, 1800),  # 3-30 minutes
+                file_size_bytes=random.randint(500000, 5000000),
+                transcript=f"This is a sample transcript of the consultation. The doctor discussed the patient's symptoms and recommended treatment options.",
+                status=RecordingStatus.COMPLETED
+            )
+            session.add(recording)
+            recordings.append(recording)
+    
+    await session.flush()
+    print(f"✓ Created {len(recordings)} recordings")
+    return recordings
+
+
+async def create_health_vitals(
+    session: AsyncSession,
+    patients: List[Patient],
+    clinicians: List[Clinician]
+) -> List[HealthVitals]:
+    """Create sample health vital records"""
+    vitals = []
+    doctors = [c for c in clinicians if c.role_type == ClinicianRoleType.DOCTOR]
+    
+    for patient in patients[:25]:  # First 25 patients have vitals
+        # Create 1-5 vital records per patient (simulating history)
+        for i in range(random.randint(1, 5)):
+            vital = HealthVitals(
+                patient_id=patient.id,
+                recorded_by=random.choice(doctors).id if random.random() > 0.3 else None,
+                heart_rate=random.randint(60, 100),
+                blood_pressure_systolic=random.randint(100, 140),
+                blood_pressure_diastolic=random.randint(60, 90),
+                temperature=round(random.uniform(36.1, 37.5), 1),
+                weight=round(random.uniform(55, 100), 1),
+                oxygen_saturation=random.randint(95, 100),
+                notes="Regular check-up" if i == 0 else None,
+                recorded_at=datetime.utcnow() - timedelta(days=i * 7)  # Weekly records
+            )
+            session.add(vital)
+            vitals.append(vital)
+    
+    await session.flush()
+    print(f"✓ Created {len(vitals)} health vital records")
+    return vitals
+
+
+async def create_triage_chats(
+    session: AsyncSession,
+    patients: List[Patient]
+) -> List[TriageChat]:
+    """Create sample AI triage chat history"""
+    chats = []
+    
+    sample_conversations = [
+        [
+            {"role": "assistant", "content": "Hello! I'm your Kliniq AI assistant. How can I help you today?", "timestamp": "2025-12-10T10:00:00"},
+            {"role": "user", "content": "I've been having headaches for the past few days", "timestamp": "2025-12-10T10:01:00"},
+            {"role": "assistant", "content": "I'm sorry to hear that. Can you describe the type of headache? Is it a dull ache, throbbing, or sharp pain?", "timestamp": "2025-12-10T10:01:30"},
+            {"role": "user", "content": "It's mostly a dull ache that gets worse in the evening", "timestamp": "2025-12-10T10:02:00"},
+            {"role": "assistant", "content": "Thank you for that information. Dull aches that worsen in the evening can often be tension headaches. Are you experiencing any neck stiffness or eye strain? Have you been drinking enough water?", "timestamp": "2025-12-10T10:02:30"}
+        ],
+        [
+            {"role": "assistant", "content": "Welcome back! How can I assist you today?", "timestamp": "2025-12-11T14:00:00"},
+            {"role": "user", "content": "I need to know when to take my medication", "timestamp": "2025-12-11T14:00:30"},
+            {"role": "assistant", "content": "I'd be happy to help with medication timing. Based on your records, you have Paracetamol 500mg prescribed. This should be taken every 6 hours as needed for pain, preferably after meals.", "timestamp": "2025-12-11T14:01:00"}
+        ],
+        [
+            {"role": "assistant", "content": "Hi there! What can I help you with?", "timestamp": "2025-12-12T09:00:00"},
+            {"role": "user", "content": "I want to book an appointment with a cardiologist", "timestamp": "2025-12-12T09:00:30"},
+            {"role": "assistant", "content": "I can help you schedule an appointment with a cardiologist. Based on your linked hospitals, I see you have access to cardiology departments at Lagos University Teaching Hospital. Would you like me to show available slots?", "timestamp": "2025-12-12T09:01:00"}
+        ]
+    ]
+    
+    for patient in patients[:15]:  # First 15 patients have chat history
+        conversation = random.choice(sample_conversations)
+        chat = TriageChat(
+            patient_id=patient.id,
+            title=conversation[1]["content"][:50] + "..." if len(conversation) > 1 else "New chat",
+            messages=conversation,
+            language=patient.preferred_language if patient.preferred_language else PreferredLanguage.ENGLISH,
+            is_active=random.choice([True, False])
+        )
+        session.add(chat)
+        chats.append(chat)
+    
+    await session.flush()
+    print(f"✓ Created {len(chats)} triage chats")
+    return chats
+
+
 async def create_invoices(
     session: AsyncSession,
     hospitals: List[Hospital]
@@ -580,6 +700,9 @@ async def seed_database(clear: bool = False):
             appointments = await create_appointments(session, patients, clinicians, hospitals, departments)
             await create_medical_history(session, patients, clinicians)
             await create_triage_cases(session, patients, clinicians)
+            await create_recordings(session, patients, clinicians, appointments)
+            await create_health_vitals(session, patients, clinicians)
+            await create_triage_chats(session, patients)
             await create_invoices(session, hospitals)
             await create_notifications(session, patient_users, clinician_users)
             

@@ -130,6 +130,62 @@ class ChatHistoryResponse(BaseModel):
     updated_at: datetime
 
 
+class RecentChat(BaseModel):
+    """Recent chat for dashboard sidebar."""
+    id: UUID
+    title: Optional[str] = None
+    preview: str  # First few words of last message
+    updated_at: datetime
+
+
+# ============================================================================
+# RECORDING SCHEMAS
+# ============================================================================
+
+class RecordingSummary(BaseModel):
+    """Consultation recording summary."""
+    id: UUID
+    title: str
+    doctor_name: str
+    duration_seconds: int
+    has_transcript: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# MEDICAL NOTES SCHEMAS
+# ============================================================================
+
+class DoctorNote(BaseModel):
+    """Doctor's note/medical history entry."""
+    id: UUID
+    type: str  # consultation, prescription, test, diagnosis
+    title: str
+    description: Optional[str] = None
+    doctor_name: str
+    date: date
+    
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# HEALTH VITALS SCHEMAS
+# ============================================================================
+
+class HealthVitalsSummary(BaseModel):
+    """Latest health vitals for dashboard."""
+    heart_rate: Optional[int] = None  # bpm
+    blood_pressure: Optional[str] = None  # "120/80"
+    temperature: Optional[float] = None  # Celsius
+    weight: Optional[float] = None  # kg
+    oxygen_saturation: Optional[int] = None  # SpO2 %
+    recorded_at: Optional[datetime] = None
+
+
 # ============================================================================
 # DASHBOARD MAIN SCHEMA
 # ============================================================================
@@ -148,5 +204,10 @@ class DashboardResponse(BaseModel):
     preferred_language: str
     upcoming_appointments: List[AppointmentSummary]
     linked_hospitals: List[HospitalSummary]
+    recent_recordings: List[RecordingSummary] = []
+    doctor_notes: List[DoctorNote] = []
+    health_vitals: Optional[HealthVitalsSummary] = None
+    recent_chats: List[RecentChat] = []
     stats: DashboardStats
     welcome_message: str  # Language-specific greeting
+

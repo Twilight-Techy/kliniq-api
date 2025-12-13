@@ -415,6 +415,34 @@ class MedicalHistory(Base):
         return f"<MedicalHistory(id={self.id}, type={self.type.value}, title={self.title})>"
 
 
+class HealthVitals(Base):
+    """Track patient health measurements over time."""
+    __tablename__ = "health_vitals"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
+    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
+    recorded_by = Column(UUID(as_uuid=True), ForeignKey("clinicians.id", ondelete="SET NULL"), nullable=True)
+    heart_rate = Column(Integer, nullable=True)  # bpm
+    blood_pressure_systolic = Column(Integer, nullable=True)  # mmHg
+    blood_pressure_diastolic = Column(Integer, nullable=True)  # mmHg
+    temperature = Column(Float, nullable=True)  # Celsius
+    weight = Column(Float, nullable=True)  # kg
+    oxygen_saturation = Column(Integer, nullable=True)  # SpO2 %
+    notes = Column(Text, nullable=True)
+    recorded_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    # Relationships
+    patient = relationship("Patient", backref=backref("health_vitals", lazy="dynamic", cascade="all, delete-orphan"))
+    clinician = relationship("Clinician", backref=backref("recorded_vitals", lazy="dynamic"))
+
+    __table_args__ = (
+        Index("idx_health_vitals_patient", "patient_id"),
+    )
+
+    def __repr__(self):
+        return f"<HealthVitals(id={self.id}, patient_id={self.patient_id})>"
+
+
 # ============================================================================
 # TRIAGE MODELS
 # ============================================================================

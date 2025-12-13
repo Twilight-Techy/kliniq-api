@@ -6,14 +6,15 @@ from datetime import datetime
 from uuid import UUID
 import json
 
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.models.models import (
-    User, Patient, Hospital, Department, PatientHospital,
+    User, Patient, Hospital, Department, PatientHospital, Clinician,
     Appointment, AppointmentStatus as DBAppointmentStatus, AppointmentType as DBAppointmentType,
-    TriageChat, PreferredLanguage
+    Recording, RecordingStatus, MedicalHistory, MedicalHistoryType,
+    HealthVitals, TriageChat, PreferredLanguage
 )
 from src.common.llm import LLMService
 from src.common.config import settings
@@ -22,7 +23,8 @@ from .schemas import (
     DashboardResponse, DashboardStats, AppointmentSummary,
     HospitalSummary, HospitalSearchResult, HospitalSearchResponse,
     LinkHospitalResponse, ChatMessage, ChatResponse, ChatHistoryResponse,
-    AppointmentType, AppointmentStatus
+    AppointmentType, AppointmentStatus,
+    RecordingSummary, DoctorNote, HealthVitalsSummary, RecentChat
 )
 
 
@@ -99,9 +101,13 @@ async def get_dashboard_data(
     for apt in appointments:
         # Get clinician and hospital info
         clinician_result = await session.execute(
-            select(User).join(User.clinician_profile).where(User.clinician_profile.has(id=apt.clinician_id))
+            select(Clinician, User)
+            .join(User, Clinician.user_id == User.id)
+            .where(Clinician.id == apt.clinician_id)
         )
-        clinician_user = clinician_result.scalar_one_or_none()
+        clinician_data = clinician_result.first()
+        clinician = clinician_data[0] if clinician_data else None
+        clinician_user = clinician_data[1] if clinician_data else None
         
         hospital_result = await session.execute(
             select(Hospital).where(Hospital.id == apt.hospital_id)
@@ -111,7 +117,7 @@ async def get_dashboard_data(
         upcoming_appointments.append(AppointmentSummary(
             id=apt.id,
             doctor_name=f"Dr. {clinician_user.first_name} {clinician_user.last_name}" if clinician_user else "Unknown",
-            specialty=apt.clinician.specialty if apt.clinician else None,
+            specialty=clinician.specialty if clinician else None,
             hospital_name=hospital.name if hospital else "Unknown",
             scheduled_date=apt.scheduled_date,
             scheduled_time=apt.scheduled_time.strftime("%I:%M %p") if apt.scheduled_time else "",
@@ -139,11 +145,108 @@ async def get_dashboard_data(
             rating=float(hospital.rating) if hospital.rating else 0.0
         ))
     
+    # Get recent recordings
+    recordings_result = await session.execute(
+        select(Recording, Clinician, User)
+        .join(Clinician, Recording.clinician_id == Clinician.id, isouter=True)
+        .join(User, Clinician.user_id == User.id, isouter=True)
+        .where(Recording.patient_id == patient.id)
+        .where(Recording.status == RecordingStatus.COMPLETED)
+        .order_by(desc(Recording.created_at))
+        .limit(5)
+    )
+    recordings = recordings_result.all()
+    
+    recent_recordings = [
+        RecordingSummary(
+            id=rec.id,
+            title=rec.title,
+            doctor_name=f"Dr. {u.first_name} {u.last_name}" if u else "Unknown",
+            duration_seconds=rec.duration_seconds,
+            has_transcript=rec.transcript is not None,
+            created_at=rec.created_at
+        )
+        for rec, clin, u in recordings
+    ]
+    
+    # Get doctor notes (medical history)
+    notes_result = await session.execute(
+        select(MedicalHistory, Clinician, User)
+        .join(Clinician, MedicalHistory.clinician_id == Clinician.id, isouter=True)
+        .join(User, Clinician.user_id == User.id, isouter=True)
+        .where(MedicalHistory.patient_id == patient.id)
+        .order_by(desc(MedicalHistory.date))
+        .limit(5)
+    )
+    notes = notes_result.all()
+    
+    doctor_notes = [
+        DoctorNote(
+            id=note.id,
+            type=note.type.value if note.type else "consultation",
+            title=note.title,
+            description=note.description,
+            doctor_name=f"Dr. {u.first_name} {u.last_name}" if u else "Unknown",
+            date=note.date
+        )
+        for note, clin, u in notes
+    ]
+    
+    # Get latest health vitals
+    vitals_result = await session.execute(
+        select(HealthVitals)
+        .where(HealthVitals.patient_id == patient.id)
+        .order_by(desc(HealthVitals.recorded_at))
+        .limit(1)
+    )
+    latest_vital = vitals_result.scalar_one_or_none()
+    
+    health_vitals = None
+    if latest_vital:
+        bp_str = None
+        if latest_vital.blood_pressure_systolic and latest_vital.blood_pressure_diastolic:
+            bp_str = f"{latest_vital.blood_pressure_systolic}/{latest_vital.blood_pressure_diastolic}"
+        health_vitals = HealthVitalsSummary(
+            heart_rate=latest_vital.heart_rate,
+            blood_pressure=bp_str,
+            temperature=latest_vital.temperature,
+            weight=latest_vital.weight,
+            oxygen_saturation=latest_vital.oxygen_saturation,
+            recorded_at=latest_vital.recorded_at
+        )
+    
+    # Get recent chats
+    chats_result = await session.execute(
+        select(TriageChat)
+        .where(TriageChat.patient_id == patient.id)
+        .order_by(desc(TriageChat.updated_at))
+        .limit(5)
+    )
+    chats = chats_result.scalars().all()
+    
+    recent_chats = []
+    for chat in chats:
+        messages = chat.messages or []
+        preview = ""
+        if messages:
+            last_msg = messages[-1]
+            preview = last_msg.get("content", "")[:50] + ("..." if len(last_msg.get("content", "")) > 50 else "")
+        recent_chats.append(RecentChat(
+            id=chat.id,
+            title=chat.title,
+            preview=preview,
+            updated_at=chat.updated_at
+        ))
+    
     return DashboardResponse(
         user_name=f"{user.first_name} {user.last_name}",
         preferred_language=preferred_lang.lower(),
         upcoming_appointments=upcoming_appointments,
         linked_hospitals=linked_hospitals,
+        recent_recordings=recent_recordings,
+        doctor_notes=doctor_notes,
+        health_vitals=health_vitals,
+        recent_chats=recent_chats,
         stats=DashboardStats(
             total_appointments=total_appointments or 0,
             completed_appointments=completed_appointments or 0,
