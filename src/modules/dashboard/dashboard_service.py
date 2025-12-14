@@ -17,6 +17,7 @@ from src.models.models import (
     HealthVitals, TriageChat, PreferredLanguage
 )
 from src.common.llm import LLMService
+from src.common.llm.tool_executor import parse_tool_calls, execute_tool_calls
 from src.common.config import settings
 
 from .schemas import (
@@ -489,6 +490,63 @@ async def process_chat(
     }
     messages.append(user_msg)
     
+    # Fetch patient context (doctor notes and upcoming appointments)
+    patient_context_parts = []
+    
+    # Add patient name for personalized greetings
+    patient_context_parts.append(f"### Patient Name: {user.full_name}")
+    
+    # Get recent doctor notes/medical history
+    notes_result = await session.execute(
+        select(MedicalHistory)
+        .where(MedicalHistory.patient_id == patient.id)
+        .order_by(MedicalHistory.date.desc())
+        .limit(5)
+    )
+    notes = notes_result.scalars().all()
+    
+    if notes:
+        patient_context_parts.append("### Recent Doctor Notes:")
+        for note in notes:
+            # Try to get clinician name
+            if note.clinician_id:
+                clinician_result = await session.execute(
+                    select(Clinician).options(selectinload(Clinician.user))
+                    .where(Clinician.id == note.clinician_id)
+                )
+                clinician = clinician_result.scalar_one_or_none()
+                doctor_name = clinician.user.full_name if clinician and clinician.user else "Doctor"
+            else:
+                doctor_name = "Doctor"
+            
+            note_date = note.date.strftime("%B %d, %Y") if note.date else "Unknown date"
+            patient_context_parts.append(
+                f"- **{note.title}** ({note_date}, Dr. {doctor_name}): {note.description or 'No details'}"
+            )
+    
+    # Get upcoming appointments
+    upcoming_result = await session.execute(
+        select(Appointment)
+        .where(Appointment.patient_id == patient.id)
+        .where(Appointment.status == DBAppointmentStatus.UPCOMING)
+        .order_by(Appointment.scheduled_date)
+        .limit(3)
+    )
+    upcoming_appointments = upcoming_result.scalars().all()
+    
+    if upcoming_appointments:
+        patient_context_parts.append("\n### Upcoming Appointments:")
+        for apt in upcoming_appointments:
+            apt_date = apt.scheduled_date.strftime("%B %d, %Y") if apt.scheduled_date else "TBD"
+            apt_time = apt.scheduled_time.strftime("%I:%M %p") if apt.scheduled_time else "TBD"
+            apt_type = "Video" if apt.appointment_type == DBAppointmentType.VIDEO else "In-person"
+            patient_context_parts.append(
+                f"- {apt_date} at {apt_time} ({apt_type})"
+            )
+    
+    # Combine context
+    patient_context = "\n".join(patient_context_parts) if patient_context_parts else None
+    
     # Call LLM
     llm = LLMService()
     
@@ -500,17 +558,41 @@ async def process_chat(
             user_message=message,
             context="general",
             language=chat.language.value.lower() if chat.language else "english",
+            patient_context=patient_context,
             conversation_history=llm_messages[:-1],  # Exclude the just-added user message
         )
     except Exception as e:
         # Fallback response if LLM fails
         response = "I'm sorry, I'm having trouble processing your request right now. Please try again or contact support if the issue persists."
     
+    # Parse and execute tool calls from LLM response
+    cleaned_response, tool_calls = parse_tool_calls(response)
+    
+    tool_results = []
+    if tool_calls:
+        tool_results = await execute_tool_calls(session, user, patient, tool_calls)
+        
+        # Append tool execution results to response for user visibility
+        for result in tool_results:
+            tool_name = result.get("tool")
+            tool_result = result.get("result", {})
+            
+            if tool_result.get("success"):
+                if tool_name == "request_appointment":
+                    cleaned_response += f"\n\n✅ **Appointment requested:** {tool_result.get('message', 'Request submitted')}"
+                elif tool_name == "create_triage":
+                    cleaned_response += f"\n\n📋 **Triage case created:** Your symptoms have been documented for medical review."
+    
+    # Use cleaned response (without TOOL_CALL blocks)
+    response = cleaned_response
+    
     # Add assistant response to history
     assistant_msg = {
         "role": "assistant",
         "content": response,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
+        "tool_calls": tool_calls if tool_calls else None,
+        "tool_results": tool_results if tool_results else None
     }
     messages.append(assistant_msg)
     
