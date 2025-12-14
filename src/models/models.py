@@ -683,7 +683,8 @@ class Message(Base):
     attachment_url = Column(String(500), nullable=True)
     attachment_name = Column(String(255), nullable=True)
     audio_duration = Column(Integer, nullable=True)  # Duration in seconds for voice messages
-    transcript = Column(Text, nullable=True)  # Cached speech-to-text for voice messages
+    original_language = Column(SAEnum(PreferredLanguage), nullable=True)  # Language the audio was spoken in
+    transcripts = Column(JSONB, nullable=True)  # Multi-language transcripts: {"yoruba": "...", "english": "..."}
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     # Relationships

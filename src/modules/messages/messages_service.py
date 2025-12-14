@@ -8,9 +8,10 @@ from uuid import UUID
 from sqlalchemy import select, update, func, or_, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from src.models.models import (
-    User, Patient, Clinician, Conversation, Message, MessageType
+    User, Patient, Clinician, Conversation, Message, MessageType, PreferredLanguage
 )
 from .schemas import (
     ConversationResponse, ConversationListResponse, ConversationDetailResponse,
@@ -84,6 +85,9 @@ def _build_message_response(
         is_read=message.is_read,
         attachment_url=message.attachment_url,
         attachment_name=message.attachment_name,
+        audio_duration=message.audio_duration,
+        original_language=message.original_language.value if message.original_language else None,
+        transcripts=message.transcripts,
         created_at=message.created_at,
         is_mine=is_mine
     )
@@ -262,6 +266,16 @@ async def send_message(
     elif request.message_type == "image":
         message_type = MessageType.IMAGE
     
+    # For audio messages, get sender's preferred language
+    sender_preferred_language = None
+    if message_type == MessageType.AUDIO:
+        patient_result = await session.execute(
+            select(Patient).where(Patient.user_id == user.id)
+        )
+        sender_patient = patient_result.scalar_one_or_none()
+        if sender_patient and sender_patient.preferred_language:
+            sender_preferred_language = sender_patient.preferred_language
+    
     new_message = Message(
         conversation_id=conv_id,
         sender_id=user.id,
@@ -269,7 +283,8 @@ async def send_message(
         message_type=message_type,
         is_read=False,
         attachment_url=request.attachment_url,
-        attachment_name=request.attachment_name
+        attachment_name=request.attachment_name,
+        original_language=sender_preferred_language
     )
     
     session.add(new_message)
@@ -565,3 +580,132 @@ async def delete_message(
     await session.commit()
     
     return DeleteMessageResponse(success=True, message="Message deleted")
+
+
+async def transcribe_message(
+    session: AsyncSession,
+    user: User,
+    message_id: str,
+    override_language: str = None,
+    view_language: str = None
+) -> dict:
+    """
+    Transcribe an audio message and translate to all languages.
+    
+    Flow:
+    1. Get the message's original_language (from sender's preferred language)
+    2. Override original_language if user specifies spoken language
+    3. If not transcribed yet: transcribe using N-ATLaS ASR
+    4. Translate to all 4 languages and cache them
+    5. Return transcript in viewer's preferred language (or specified view_language)
+    
+    Args:
+        session: Database session
+        user: Current user (viewer)
+        message_id: ID of the message to transcribe
+        override_language: If provided, overrides original_language and re-transcribes
+        view_language: Language to return (defaults to viewer's preferred language)
+        
+    Returns:
+        Dict with text, language, original_language, cached, translated flags
+    """
+    from src.common.llm.transcription_service import transcribe_audio
+    from src.common.llm.translation_service import translate_text
+    
+    msg_id = UUID(message_id)
+    
+    # Get the message
+    result = await session.execute(
+        select(Message).where(Message.id == msg_id)
+    )
+    message = result.scalar_one_or_none()
+    
+    if not message:
+        return {"error": "Message not found"}
+    
+    if not message.attachment_url:
+        return {"error": "Message has no audio attachment"}
+    
+    # Determine viewer's preferred language
+    if view_language:
+        target_language = view_language.lower()
+    else:
+        # Get viewer's preferred language
+        viewer_result = await session.execute(
+            select(Patient).where(Patient.user_id == user.id)
+        )
+        viewer_patient = viewer_result.scalar_one_or_none()
+        
+        if viewer_patient and viewer_patient.preferred_language:
+            target_language = viewer_patient.preferred_language.value
+        else:
+            # Default to English for clinicians or users without preference
+            target_language = "english"
+    
+    transcripts = message.transcripts or {}
+    
+    # If just viewing existing transcript
+    if not override_language and target_language in transcripts:
+        return {
+            "text": transcripts[target_language],
+            "language": target_language,
+            "original_language": message.original_language.value if message.original_language else None,
+            "cached": True,
+            "translated": target_language != (message.original_language.value if message.original_language else None)
+        }
+    
+    # Determine spoken language for transcription
+    if override_language:
+        # User is specifying/correcting the spoken language
+        spoken_lang = override_language.lower()
+        # Convert string to enum
+        try:
+            message.original_language = PreferredLanguage(spoken_lang)
+        except ValueError:
+            message.original_language = PreferredLanguage.ENGLISH
+        # Clear existing transcripts for re-transcription
+        transcripts = {}
+    elif message.original_language:
+        spoken_lang = message.original_language.value
+    else:
+        # No original language set, default to English
+        spoken_lang = "english"
+        message.original_language = PreferredLanguage.ENGLISH
+    
+    # Transcribe in the original/spoken language
+    transcription_result = await transcribe_audio(message.attachment_url, spoken_lang)
+    
+    if transcription_result.get("error"):
+        return {"error": transcription_result["error"]}
+    
+    original_text = transcription_result.get("text", "")
+    
+    # Store original transcript
+    transcripts[spoken_lang] = original_text
+    
+    # All supported languages
+    all_languages = ["english", "yoruba", "hausa", "igbo"]
+    
+    # Translate to all other languages
+    for lang in all_languages:
+        if lang != spoken_lang and lang not in transcripts:
+            translation = await translate_text(
+                text=original_text,
+                source_language=spoken_lang,
+                target_language=lang
+            )
+            transcripts[lang] = translation.get("text", original_text)
+    
+    # Save to database
+    message.transcripts = transcripts
+    flag_modified(message, "transcripts")
+    await session.commit()
+    
+    return {
+        "text": transcripts.get(target_language, original_text),
+        "language": target_language,
+        "original_language": spoken_lang,
+        "cached": False,
+        "translated": target_language != spoken_lang
+    }
+

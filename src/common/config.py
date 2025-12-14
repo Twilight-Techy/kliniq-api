@@ -37,6 +37,7 @@ class Settings(BaseSettings):
 
     # LLM / Modal settings
     MODAL_ENDPOINT_URL: str = ""  # Will be set after Modal deployment
+    MODAL_ASR_URL: str = ""  # N-ATLaS ASR endpoint for transcription
 
     # Uncomment if you want to support comma-separated ALLOWED_ORIGINS strings
     @field_validator("ALLOWED_ORIGINS", mode="before")

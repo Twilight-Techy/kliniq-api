@@ -116,3 +116,45 @@ async def delete_message(
     if not result.success:
         raise HTTPException(status_code=403, detail=result.message)
     return result
+
+
+@router.post("/messages/{message_id}/transcribe")
+async def transcribe_message(
+    message_id: str,
+    override_language: str = None,  # Override spoken language (re-transcribes)
+    view_language: str = None,  # View transcript in different language
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Transcribe an audio message using N-ATLaS ASR.
+    
+    Flow:
+    1. Transcribes using sender's preferred language (stored as original_language)
+    2. User can override spoken language if audio is in different language
+    3. Translates to ALL 4 languages (English, Yoruba, Hausa, Igbo) and caches
+    4. Returns transcript in viewer's preferred language (or view_language if specified)
+    
+    Args:
+        message_id: ID of the audio message
+        override_language: If provided, re-transcribes with this language as spoken language
+        view_language: If provided, returns transcript in this language instead of viewer's preference
+    """
+    result = await service.transcribe_message(
+        session=db,
+        user=current_user,
+        message_id=message_id,
+        override_language=override_language,
+        view_language=view_language
+    )
+    
+    if result.get("error"):
+        detail = result["error"]
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        elif "no audio" in detail.lower():
+            raise HTTPException(status_code=400, detail=detail)
+        else:
+            raise HTTPException(status_code=500, detail=detail)
+    
+    return result

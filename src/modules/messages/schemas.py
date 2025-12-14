@@ -16,6 +16,9 @@ class MessageResponse(BaseModel):
     is_read: bool
     attachment_url: Optional[str] = None
     attachment_name: Optional[str] = None
+    audio_duration: Optional[int] = None
+    original_language: Optional[str] = None  # Language the audio was spoken in
+    transcripts: Optional[dict] = None  # Multi-language transcripts {"english": "...", "yoruba": "..."}
     created_at: datetime
     is_mine: bool  # True if sent by current user
 
