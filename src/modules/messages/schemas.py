@@ -103,3 +103,18 @@ class AvailableClinicianResponse(BaseModel):
 class AvailableCliniciansListResponse(BaseModel):
     clinicians: List[AvailableClinicianResponse]
     total: int
+
+
+class EditMessageRequest(BaseModel):
+    content: str
+
+
+class EditMessageResponse(BaseModel):
+    success: bool
+    message: str
+    updated_message: Optional[MessageResponse] = None
+
+
+class DeleteMessageResponse(BaseModel):
+    success: bool
+    message: str

@@ -13,7 +13,8 @@ from .schemas import (
     ConversationListResponse, ConversationDetailResponse,
     SendMessageRequest, SendMessageResponse,
     StartConversationRequest, StartConversationResponse,
-    MarkReadResponse, AvailableCliniciansListResponse
+    MarkReadResponse, AvailableCliniciansListResponse,
+    EditMessageRequest, EditMessageResponse, DeleteMessageResponse
 )
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
@@ -88,3 +89,30 @@ async def get_available_clinicians(
 ):
     """Get clinicians from linked hospitals to start new conversations with."""
     return await service.get_available_clinicians(db, current_user)
+
+
+@router.put("/messages/{message_id}", response_model=EditMessageResponse)
+async def edit_message(
+    message_id: str,
+    request: EditMessageRequest,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
+):
+    """Edit a message (only sender can edit)."""
+    result = await service.edit_message(db, current_user, message_id, request.content)
+    if not result.success:
+        raise HTTPException(status_code=403, detail=result.message)
+    return result
+
+
+@router.delete("/messages/{message_id}", response_model=DeleteMessageResponse)
+async def delete_message(
+    message_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a message (only sender can delete)."""
+    result = await service.delete_message(db, current_user, message_id)
+    if not result.success:
+        raise HTTPException(status_code=403, detail=result.message)
+    return result

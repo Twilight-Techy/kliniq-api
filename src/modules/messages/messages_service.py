@@ -505,3 +505,63 @@ async def get_available_clinicians(
         clinicians=clinicians,
         total=len(clinicians)
     )
+
+
+async def edit_message(
+    session: AsyncSession,
+    user: User,
+    message_id: str,
+    new_content: str
+) -> "EditMessageResponse":
+    """Edit a message (only sender can edit their own messages)."""
+    from .schemas import EditMessageResponse
+    
+    msg_id = UUID(message_id)
+    
+    # Get message and verify ownership
+    result = await session.execute(
+        select(Message)
+        .options(selectinload(Message.sender))
+        .where(Message.id == msg_id, Message.sender_id == user.id)
+    )
+    message = result.scalar_one_or_none()
+    
+    if not message:
+        return EditMessageResponse(success=False, message="Message not found or not authorized")
+    
+    # Update content
+    message.content = new_content
+    await session.commit()
+    await session.refresh(message, ["sender"])
+    
+    return EditMessageResponse(
+        success=True,
+        message="Message updated",
+        updated_message=_build_message_response(message, user.id)
+    )
+
+
+async def delete_message(
+    session: AsyncSession,
+    user: User,
+    message_id: str
+) -> "DeleteMessageResponse":
+    """Delete a message (only sender can delete their own messages)."""
+    from .schemas import DeleteMessageResponse
+    
+    msg_id = UUID(message_id)
+    
+    # Get message and verify ownership
+    result = await session.execute(
+        select(Message).where(Message.id == msg_id, Message.sender_id == user.id)
+    )
+    message = result.scalar_one_or_none()
+    
+    if not message:
+        return DeleteMessageResponse(success=False, message="Message not found or not authorized")
+    
+    # Delete message
+    await session.delete(message)
+    await session.commit()
+    
+    return DeleteMessageResponse(success=True, message="Message deleted")
