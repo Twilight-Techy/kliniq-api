@@ -10,6 +10,7 @@ from src.modules.recordings.recordings_controller import router as recordings_ro
 from src.modules.history.history_controller import router as history_router
 from src.modules.settings.settings_controller import router as settings_router
 from src.modules.messages.messages_controller import router as messages_router
+from src.modules.notifications.notifications_controller import router as notifications_router
 
 def include_routers(app: FastAPI) -> None:
     """Include all API routers in the FastAPI application."""
@@ -22,11 +23,4 @@ def include_routers(app: FastAPI) -> None:
     app.include_router(history_router)
     app.include_router(settings_router)
     app.include_router(messages_router)
-    
-    # TODO: Add new Kliniq module routers here as they are created
-    # app.include_router(hospital_router)
-    # app.include_router(patient_router)
-    # app.include_router(clinician_router)
-    # app.include_router(notification_router)
-    # app.include_router(message_router)
-
+    app.include_router(notifications_router)
