@@ -648,11 +648,58 @@ async def transcribe_message(
     if not override_language and target_language in transcripts:
         return {
             "text": transcripts[target_language],
+            "transcripts": transcripts,  # All cached transcripts
             "language": target_language,
             "original_language": message.original_language.value if message.original_language else None,
             "cached": True,
             "translated": target_language != (message.original_language.value if message.original_language else None)
         }
+    
+    # If transcripts exist but target language is missing - just translate that language
+    if not override_language and transcripts and message.original_language:
+        original_lang = message.original_language.value
+        source_text = transcripts.get(original_lang)
+        
+        if source_text and target_language != original_lang:
+            # Translate just this one language
+            try:
+                # print(f"[DEBUG] Translating from {original_lang} to {target_language}")
+                # print(f"[DEBUG] Source text: {source_text[:100]}...")
+                translation = await translate_text(
+                    text=source_text,
+                    source_language=original_lang,
+                    target_language=target_language
+                )
+                # print(f"[DEBUG] Translation result: {translation}")
+                
+                # Only use translated text if no error occurred
+                if "error" in translation:
+                    print(f"[DEBUG] Translation error: {translation['error']}")
+                    return {"error": translation["error"], "text": source_text, "transcripts": transcripts}
+                
+                translated_text = translation.get("text", "")
+                if not translated_text or translated_text == source_text:
+                    print(f"[DEBUG] Translation returned same text or empty")
+                    return {"error": "Translation returned unchanged text", "text": source_text, "transcripts": transcripts}
+                    
+                transcripts[target_language] = translated_text
+                
+                # Update database
+                message.transcripts = transcripts
+                flag_modified(message, "transcripts")
+                await session.commit()
+                
+                return {
+                    "text": translated_text,
+                    "transcripts": transcripts,
+                    "language": target_language,
+                    "original_language": original_lang,
+                    "cached": False,
+                    "translated": True
+                }
+            except Exception as e:
+                print(f"[DEBUG] Translation exception: {e}")
+                return {"error": f"Translation failed: {str(e)}", "text": source_text, "transcripts": transcripts}
     
     # Determine spoken language for transcription
     if override_language:
@@ -686,15 +733,20 @@ async def transcribe_message(
     # All supported languages
     all_languages = ["english", "yoruba", "hausa", "igbo"]
     
-    # Translate to all other languages
+    # Translate to all other languages (with error handling for each)
     for lang in all_languages:
         if lang != spoken_lang and lang not in transcripts:
-            translation = await translate_text(
-                text=original_text,
-                source_language=spoken_lang,
-                target_language=lang
-            )
-            transcripts[lang] = translation.get("text", original_text)
+            try:
+                translation = await translate_text(
+                    text=original_text,
+                    source_language=spoken_lang,
+                    target_language=lang
+                )
+                transcripts[lang] = translation.get("text", original_text)
+            except Exception as e:
+                # Log error but don't fail - just skip this translation
+                print(f"Translation to {lang} failed: {e}")
+                # Optionally: transcripts[lang] = original_text  # Fallback to original
     
     # Save to database
     message.transcripts = transcripts
@@ -703,6 +755,7 @@ async def transcribe_message(
     
     return {
         "text": transcripts.get(target_language, original_text),
+        "transcripts": transcripts,  # All 4 language transcripts
         "language": target_language,
         "original_language": spoken_lang,
         "cached": False,
