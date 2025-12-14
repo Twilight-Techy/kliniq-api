@@ -61,6 +61,7 @@ asr_image = (
         "huggingface_hub",
         "fastapi",
         "soundfile",
+        "httpx",
     )
     .run_function(
         download_asr_models,
@@ -131,18 +132,52 @@ class NATLaSASR:
         import io
         import soundfile as sf
         import numpy as np
+        import subprocess
+        import tempfile
+        import os
         
-        # Load audio from bytes
+        # First try to read directly with soundfile (works for wav, flac, ogg)
         try:
             audio, sr = sf.read(io.BytesIO(audio_bytes))
-            # Convert to mono if stereo
-            if len(audio.shape) > 1:
-                audio = np.mean(audio, axis=1)
-            # Resample to 16kHz if needed
-            if sr != 16000:
-                audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
-        except Exception as e:
-            return {"error": f"Failed to load audio: {str(e)}", "text": ""}
+        except Exception:
+            # If direct read fails, use ffmpeg to convert to wav
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as input_file:
+                    input_file.write(audio_bytes)
+                    input_path = input_file.name
+                
+                output_path = input_path.replace(".webm", ".wav")
+                
+                # Use ffmpeg to convert to wav
+                result = subprocess.run([
+                    "ffmpeg", "-y", "-i", input_path,
+                    "-ar", "16000",  # Resample to 16kHz
+                    "-ac", "1",      # Mono
+                    "-f", "wav",
+                    output_path
+                ], capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    os.unlink(input_path)
+                    return {"error": f"FFmpeg conversion failed: {result.stderr}", "text": ""}
+                
+                # Read the converted wav file
+                audio, sr = sf.read(output_path)
+                
+                # Cleanup temp files
+                os.unlink(input_path)
+                os.unlink(output_path)
+                
+            except Exception as e:
+                return {"error": f"Failed to load audio: {str(e)}", "text": ""}
+        
+        # Convert to mono if stereo
+        if len(audio.shape) > 1:
+            audio = np.mean(audio, axis=1)
+        
+        # Resample to 16kHz if needed
+        if sr != 16000:
+            audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
         
         # Get pipeline for language
         pipe = self._get_pipeline(language)
