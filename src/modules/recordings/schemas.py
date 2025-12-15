@@ -77,3 +77,17 @@ class UpcomingAppointmentResponse(BaseModel):
 
 class UpcomingAppointmentsListResponse(BaseModel):
     appointments: List[UpcomingAppointmentResponse]
+
+
+# ============================================================================
+# TRANSCRIPTION SCHEMAS
+# ============================================================================
+
+class TranscriptionResponse(BaseModel):
+    """Response from transcription request."""
+    text: str
+    language: str
+    original_language: Optional[str] = None
+    cached: bool = False
+    translated: bool = False
+    error: Optional[str] = None

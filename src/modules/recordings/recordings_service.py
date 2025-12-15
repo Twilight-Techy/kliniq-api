@@ -1,7 +1,7 @@
 # src/modules/recordings/recordings_service.py
 """Service layer for recordings business logic."""
 
-from typing import Optional
+from typing import Optional, Dict
 from uuid import UUID
 
 from sqlalchemy import select, and_, or_
@@ -12,10 +12,13 @@ from src.models.models import (
     User, Patient, Recording, Appointment, Clinician, Hospital, Department,
     RecordingStatus as DBRecordingStatus, AppointmentStatus
 )
+from src.common.llm.transcription_service import transcribe_audio
+from src.common.llm.translation_service import translate_text
 from .schemas import (
     RecordingResponse, RecordingListResponse, RecordingCreateRequest,
     RecordingUploadRequest, RecordingActionResponse, RecordingStatus,
-    UpcomingAppointmentResponse, UpcomingAppointmentsListResponse
+    UpcomingAppointmentResponse, UpcomingAppointmentsListResponse,
+    TranscriptionResponse
 )
 
 
@@ -342,3 +345,104 @@ async def get_upcoming_appointments(
         ))
     
     return UpcomingAppointmentsListResponse(appointments=appointment_responses)
+
+
+async def transcribe_recording(
+    session: AsyncSession,
+    user: User,
+    recording_id: UUID,
+    target_language: str = "english",
+    override_language: Optional[str] = None
+) -> Dict:
+    """
+    Transcribe a recording using Modal ASR and translate to target language.
+    
+    Args:
+        session: Database session
+        user: Current user
+        recording_id: ID of the recording to transcribe
+        target_language: Language to display transcript in (default: english)
+        override_language: Override the detected spoken language
+    
+    Returns:
+        Dict with transcript text and metadata
+    """
+    # Get patient
+    patient_result = await session.execute(
+        select(Patient).where(Patient.user_id == user.id)
+    )
+    patient = patient_result.scalar_one_or_none()
+    
+    if not patient:
+        return {"error": "Patient not found"}
+    
+    # Get recording
+    recording_result = await session.execute(
+        select(Recording).where(and_(
+            Recording.id == recording_id,
+            Recording.patient_id == patient.id
+        ))
+    )
+    recording = recording_result.scalar_one_or_none()
+    
+    if not recording:
+        return {"error": "Recording not found"}
+    
+    if not recording.file_url:
+        return {"error": "Recording has no audio file"}
+    
+    if recording.status != DBRecordingStatus.COMPLETED:
+        return {"error": "Recording is still processing"}
+    
+    # If transcript exists and not overriding language, return cached
+    if recording.transcript and not override_language:
+        return {
+            "text": recording.transcript,
+            "language": target_language,
+            "original_language": "english",  # Assume English if cached
+            "cached": True,
+            "translated": False
+        }
+    
+    # Determine spoken language
+    spoken_lang = override_language or "english"
+    
+    # Transcribe audio
+    transcription_result = await transcribe_audio(recording.file_url, spoken_lang)
+    
+    if transcription_result.get("error"):
+        return {"error": transcription_result["error"]}
+    
+    original_text = transcription_result.get("text", "")
+    
+    if not original_text:
+        return {"error": "Transcription returned empty result"}
+    
+    # Translate if needed
+    result_text = original_text
+    is_translated = False
+    
+    if target_language.lower() != spoken_lang.lower():
+        try:
+            translation = await translate_text(
+                text=original_text,
+                source_language=spoken_lang,
+                target_language=target_language
+            )
+            if not translation.get("error"):
+                result_text = translation.get("text", original_text)
+                is_translated = True
+        except Exception as e:
+            print(f"Translation failed: {e}")
+    
+    # Save transcript to database (store original language version)
+    recording.transcript = original_text
+    await session.commit()
+    
+    return {
+        "text": result_text,
+        "language": target_language,
+        "original_language": spoken_lang,
+        "cached": False,
+        "translated": is_translated
+    }

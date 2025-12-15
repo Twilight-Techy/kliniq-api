@@ -97,3 +97,25 @@ async def delete_recording(
     if not result.success:
         raise HTTPException(status_code=400, detail=result.message)
     return result
+
+
+@router.post("/{recording_id}/transcribe")
+async def transcribe_recording(
+    recording_id: UUID,
+    target_language: str = "english",
+    override_language: str = None,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Transcribe a recording using ASR and optionally translate.
+    
+    - target_language: Display transcript in this language (default: english)
+    - override_language: Override the detected spoken language for re-transcription
+    """
+    result = await service.transcribe_recording(
+        db, current_user, recording_id, target_language, override_language
+    )
+    if result.get("error"):
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result

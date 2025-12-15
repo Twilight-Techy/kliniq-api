@@ -494,7 +494,7 @@ async def process_chat(
     patient_context_parts = []
     
     # Add patient name for personalized greetings
-    patient_context_parts.append(f"### Patient Name: {user.full_name}")
+    patient_context_parts.append(f"### Patient Name: {user.first_name} {user.last_name}")
     
     # Get recent doctor notes/medical history
     notes_result = await session.execute(
@@ -515,7 +515,7 @@ async def process_chat(
                     .where(Clinician.id == note.clinician_id)
                 )
                 clinician = clinician_result.scalar_one_or_none()
-                doctor_name = clinician.user.full_name if clinician and clinician.user else "Doctor"
+                doctor_name = f"{clinician.user.first_name} {clinician.user.last_name}" if clinician and clinician.user else "Doctor"
             else:
                 doctor_name = "Doctor"
             
@@ -539,7 +539,7 @@ async def process_chat(
         for apt in upcoming_appointments:
             apt_date = apt.scheduled_date.strftime("%B %d, %Y") if apt.scheduled_date else "TBD"
             apt_time = apt.scheduled_time.strftime("%I:%M %p") if apt.scheduled_time else "TBD"
-            apt_type = "Video" if apt.appointment_type == DBAppointmentType.VIDEO else "In-person"
+            apt_type = "Video" if apt.type == DBAppointmentType.VIDEO else "In-person"
             patient_context_parts.append(
                 f"- {apt_date} at {apt_time} ({apt_type})"
             )
