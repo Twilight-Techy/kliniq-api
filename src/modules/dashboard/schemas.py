@@ -113,10 +113,19 @@ class ChatRequest(BaseModel):
     chat_id: Optional[UUID] = None  # Continue existing chat or start new
 
 
+class ToolAction(BaseModel):
+    """A tool action executed by the AI during chat."""
+    tool: str  # e.g. "request_appointment", "create_triage"
+    success: bool
+    message: str  # Human-readable result
+    details: dict = {}  # Extra data (request_id, urgency, department, etc.)
+
+
 class ChatResponse(BaseModel):
     """Chat response from AI."""
     chat_id: UUID
     response: str
+    tool_actions: List[ToolAction] = []  # Structured tool call results for frontend rendering
     usage: Optional[dict] = None
 
 

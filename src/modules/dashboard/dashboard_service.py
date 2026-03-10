@@ -25,7 +25,8 @@ from .schemas import (
     HospitalSummary, HospitalSearchResult, HospitalSearchResponse,
     LinkHospitalResponse, ChatMessage, ChatResponse, ChatHistoryResponse,
     AppointmentType, AppointmentStatus,
-    RecordingSummary, DoctorNote, HealthVitalsSummary, RecentChat
+    RecordingSummary, DoctorNote, HealthVitalsSummary, RecentChat,
+    ToolAction
 )
 
 
@@ -569,19 +570,37 @@ async def process_chat(
     cleaned_response, tool_calls = llm.get_tool_calls(response)
     
     tool_results = []
+    tool_actions = []  # Structured tool actions for frontend
     if tool_calls:
         tool_results = await execute_tool_calls(session, user, patient, tool_calls)
-        
-        # Append tool execution results to response for user visibility
+
+        # Build structured ToolAction objects for the frontend
         for result in tool_results:
             tool_name = result.get("tool")
             tool_result = result.get("result", {})
-            
-            if tool_result.get("success"):
-                if tool_name == "request_appointment":
-                    cleaned_response += f"\n\n✅ **Appointment requested:** {tool_result.get('message', 'Request submitted')}"
-                elif tool_name == "create_triage":
-                    cleaned_response += f"\n\n📋 **Triage case created:** Your symptoms have been documented for medical review."
+            is_success = tool_result.get("success", False)
+
+            # Build details dict with relevant info
+            details = {}
+            if tool_name == "request_appointment":
+                if tool_result.get("request_id"):
+                    details["request_id"] = tool_result["request_id"]
+                if tool_result.get("urgency"):
+                    details["urgency"] = tool_result["urgency"]
+                if tool_result.get("department"):
+                    details["department"] = tool_result["department"]
+            elif tool_name == "create_triage":
+                if tool_result.get("triage_id"):
+                    details["triage_id"] = tool_result["triage_id"]
+                if tool_result.get("urgency_level"):
+                    details["urgency_level"] = tool_result["urgency_level"]
+
+            tool_actions.append(ToolAction(
+                tool=tool_name,
+                success=is_success,
+                message=tool_result.get("message", "Action completed"),
+                details=details,
+            ))
     
     # Use cleaned response (without TOOL_CALL blocks)
     response = cleaned_response
@@ -607,6 +626,7 @@ async def process_chat(
     return ChatResponse(
         chat_id=chat.id,
         response=response,
+        tool_actions=tool_actions,
         usage=None
     )
 
