@@ -35,8 +35,12 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str
     CONTACT_RECIPIENT: str
 
-    # LLM / Modal settings
-    MODAL_ENDPOINT_URL: str = ""  # Will be set after Modal deployment
+    # LLM Provider settings
+    LLM_PROVIDER: str = "gemini"  # "gemini" (default) or "natlas"
+    GOOGLE_API_KEY: str = ""  # Required for Gemini, Google STT, and Google TTS
+
+    # Legacy Modal settings (used when LLM_PROVIDER=natlas)
+    MODAL_ENDPOINT_URL: str = ""  # N-ATLaS LLM endpoint on Modal
     MODAL_ASR_URL: str = ""  # N-ATLaS ASR endpoint for transcription
 
     # Uncomment if you want to support comma-separated ALLOWED_ORIGINS strings

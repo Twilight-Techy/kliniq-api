@@ -17,7 +17,7 @@ from src.models.models import (
     HealthVitals, TriageChat, PreferredLanguage
 )
 from src.common.llm import LLMService
-from src.common.llm.tool_executor import parse_tool_calls, execute_tool_calls
+from src.common.llm.tool_executor import execute_tool_calls
 from src.common.config import settings
 
 from .schemas import (
@@ -565,8 +565,8 @@ async def process_chat(
         # Fallback response if LLM fails
         response = "I'm sorry, I'm having trouble processing your request right now. Please try again or contact support if the issue persists."
     
-    # Parse and execute tool calls from LLM response
-    cleaned_response, tool_calls = parse_tool_calls(response)
+    # Parse and execute tool calls from LLM response (provider-specific)
+    cleaned_response, tool_calls = llm.get_tool_calls(response)
     
     tool_results = []
     if tool_calls:

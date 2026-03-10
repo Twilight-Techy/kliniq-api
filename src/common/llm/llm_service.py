@@ -1,16 +1,15 @@
 # src/common/llm/llm_service.py
 """
-LLM Service for calling the N-ATLaS Modal endpoint.
+LLM Service — backward-compatible wrapper around the provider system.
 
-This service provides a simple interface for the backend to call
-the deployed N-ATLaS model for multilingual AI features.
+This module retains the original LLMService class interface so that
+existing imports (`from src.common.llm import LLMService`) continue
+to work. Internally, it delegates to the configured provider
+(Gemini or N-ATLaS) via the provider factory.
 """
 
-import httpx
 from typing import Optional
 from datetime import datetime
-
-from src.common.config import settings
 
 
 # Kliniq-specific system prompts for different contexts
@@ -134,18 +133,24 @@ When booking new appointments, collect:
 
 
 class LLMService:
-    """Service for interacting with the N-ATLaS LLM deployed on Modal."""
-    
+    """
+    Backward-compatible LLM service wrapper.
+
+    Delegates to the configured provider (Gemini or N-ATLaS).
+    Existing code using LLMService() continues to work without changes.
+    """
+
     def __init__(self, endpoint_url: Optional[str] = None):
         """
         Initialize the LLM service.
-        
+
         Args:
-            endpoint_url: Modal endpoint URL. Defaults to settings.MODAL_ENDPOINT_URL
+            endpoint_url: Optional Modal endpoint URL (only used for N-ATLaS).
+                          If not provided, the provider factory selects based on config.
         """
-        self.endpoint_url = endpoint_url or getattr(settings, 'MODAL_ENDPOINT_URL', None)
-        self.timeout = 120.0  # 2 minute timeout for generation
-        
+        from .provider_factory import get_llm_provider
+        self._provider = get_llm_provider()
+
     async def generate(
         self,
         messages: list[dict],
@@ -153,33 +158,13 @@ class LLMService:
         temperature: float = 0.7,
         top_p: float = 0.9,
     ) -> dict:
-        """
-        Generate a response from the LLM.
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content'
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature (0.0-1.0)
-            top_p: Nucleus sampling parameter
-            
-        Returns:
-            Dict with 'response', 'usage', and 'model' keys
-        """
-        if not self.endpoint_url:
-            raise ValueError("Modal endpoint URL not configured. Set MODAL_ENDPOINT_URL in settings.")
-        
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                self.endpoint_url,
-                json={
-                    "messages": messages,
-                    "max_tokens": max_tokens,
-                    "temperature": temperature,
-                    "top_p": top_p,
-                }
-            )
-            response.raise_for_status()
-            return response.json()
+        """Generate a response from the configured LLM provider."""
+        return await self._provider.generate(
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
     
     async def chat(
         self,
@@ -191,54 +176,16 @@ class LLMService:
         max_tokens: int = 1024,
         temperature: float = 0.7,
     ) -> str:
-        """
-        High-level chat interface with context-aware system prompts.
-        
-        Args:
-            user_message: The user's message
-            context: Context type (general, triage, appointment)
-            language: Preferred language hint (english, hausa, igbo, yoruba)
-            patient_context: Additional context like doctor notes, appointments
-            conversation_history: Optional previous messages
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            
-        Returns:
-            The assistant's response text
-        """
-        # Get appropriate system prompt
-        system_prompt = SYSTEM_PROMPTS.get(context, SYSTEM_PROMPTS["general"])
-        
-        # Inject patient context (doctor notes, appointments, etc.)
-        context_section = ""
-        if patient_context:
-            context_section = f"\n## PATIENT INFORMATION:\n{patient_context}"
-        system_prompt = system_prompt.replace("{context}", context_section)
-        
-        # Add language preference
-        if language and language.lower() != "english":
-            system_prompt += f"\n\n## PATIENT'S PREFERRED LANGUAGE: {language.title()}\nThe patient prefers {language.title()}. Respond in {language.title()} when they write in that language, or in English if they write in English. Do not respond in any other language besides those 2."
-        else:
-            system_prompt += "\n\n## PATIENT'S PREFERRED LANGUAGE: English\nRespond in English. Do not respond in any other language besides English."
-        
-        # Build messages
-        messages = [{"role": "system", "content": system_prompt}]
-        
-        # Add conversation history if provided
-        if conversation_history:
-            messages.extend(conversation_history)
-        
-        # Add the current user message
-        messages.append({"role": "user", "content": user_message})
-        
-        # Generate response
-        result = await self.generate(
-            messages=messages,
+        """Chat with the configured LLM provider."""
+        return await self._provider.chat(
+            user_message=user_message,
+            context=context,
+            language=language,
+            patient_context=patient_context,
+            conversation_history=conversation_history,
             max_tokens=max_tokens,
             temperature=temperature,
         )
-        
-        return result.get("response", "")
     
     async def triage_symptoms(
         self,
@@ -246,60 +193,29 @@ class LLMService:
         language: str = "english",
         additional_info: Optional[str] = None,
     ) -> dict:
-        """
-        Perform AI-assisted symptom triage.
-        
-        Args:
-            symptoms: Patient's described symptoms
-            language: Patient's preferred language
-            additional_info: Any additional context
-            
-        Returns:
-            Dict with 'assessment', 'urgency', and 'recommendations'
-        """
-        prompt = f"Patient symptoms: {symptoms}"
-        if additional_info:
-            prompt += f"\nAdditional information: {additional_info}"
-        prompt += "\n\nPlease provide: 1) Brief symptom assessment 2) Urgency level (low/medium/high) 3) Recommended next steps"
-        
-        response = await self.chat(
-            user_message=prompt,
-            context="triage",
+        """Perform AI-assisted symptom triage."""
+        return await self._provider.triage_symptoms(
+            symptoms=symptoms,
             language=language,
-            temperature=0.3,  # Lower temperature for more consistent assessments
+            additional_info=additional_info,
         )
-        
-        return {
-            "assessment": response,
-            "language": language,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
-    
+
     async def translate(
         self,
         text: str,
         source_language: str,
         target_language: str,
     ) -> str:
-        """
-        Translate text between supported languages.
-        
-        Args:
-            text: Text to translate
-            source_language: Source language
-            target_language: Target language
-            
-        Returns:
-            Translated text
-        """
-        prompt = f"Translate the following from {source_language} to {target_language}:\n\n{text}"
-        
-        return await self.chat(
-            user_message=prompt,
-            context="translation",
-            temperature=0.3,  # Lower temperature for accurate translation
-            max_tokens=2048,
+        """Translate text between supported languages."""
+        return await self._provider.translate(
+            text=text,
+            source_language=source_language,
+            target_language=target_language,
         )
+
+    def get_tool_calls(self, response: str | dict) -> tuple[str, list[dict]]:
+        """Extract tool calls from the LLM response (provider-specific)."""
+        return self._provider.get_tool_calls(response)
 
 
 # Convenience function for simple generation
@@ -311,15 +227,8 @@ async def generate_response(
 ) -> str:
     """
     Convenience function for generating a response.
-    
-    Args:
-        user_message: The user's message
-        context: Context type (general, triage, translation, appointment)
-        language: Preferred language
-        **kwargs: Additional arguments passed to LLMService.chat()
-        
-    Returns:
-        The assistant's response text
+
+    Uses the configured provider (Gemini or N-ATLaS).
     """
     service = LLMService()
     return await service.chat(

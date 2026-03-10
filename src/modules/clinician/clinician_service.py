@@ -16,7 +16,7 @@ from src.models.models import (
     AppointmentRequest, RequestStatus, UrgencyLevel, AppointmentType, AppointmentStatus, Hospital,
     ClinicianStatus
 )
-from src.common.llm.llm_service import LLMService
+from src.common.llm import LLMService
 from .schemas import (
     ClinicianDashboardResponse, ClinicianStat, TriageCaseResponse,
     EscalatedQueryResponse, PointsSummary, PointsBreakdown, RecentActivity,
