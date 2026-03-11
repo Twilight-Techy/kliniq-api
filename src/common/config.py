@@ -44,11 +44,18 @@ class Settings(BaseSettings):
     MODAL_ENDPOINT_URL: str = ""  # N-ATLaS LLM endpoint on Modal
     MODAL_ASR_URL: str = ""  # N-ATLaS ASR endpoint for transcription
 
-    # Uncomment if you want to support comma-separated ALLOWED_ORIGINS strings
     @field_validator("ALLOWED_ORIGINS", mode="before")
     def split_origins(cls, value):
         if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
+            # Handle JSON-like strings ["*"] or ["url1", "url2"]
+            if value.startswith("[") and value.endswith("]"):
+                import json
+                try:
+                    return json.loads(value)
+                except json.JSONDecodeError:
+                    # Strip brackets and try splitting
+                    value = value[1:-1]
+            return [origin.strip().strip("'").strip('"') for origin in value.split(",") if origin.strip()]
         return value
 
 settings = Settings()
