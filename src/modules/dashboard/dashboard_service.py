@@ -564,6 +564,9 @@ async def process_chat(
         )
     except Exception as e:
         # Fallback response if LLM fails
+        print(f"ERROR in LLM chat: {e}")
+        import traceback
+        traceback.print_exc()
         response = "I'm sorry, I'm having trouble processing your request right now. Please try again or contact support if the issue persists."
     
     # Parse and execute tool calls from LLM response (provider-specific)
