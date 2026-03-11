@@ -1,45 +1,96 @@
 # 🚀 Self-Hosting the Kliniq API
 
-So you want to run your own version of the Kliniq backend? Awesome! Here's a beginner-friendly guide to getting it up and running on **Render**.
+This guide provides step-by-step instructions for getting the Kliniq backend running on your own infrastructure. We recommend **Render** for a smooth deployment experience.
 
-### 1. Prerequisites
-- A [GitHub](https://github.com) account.
-- A [Render](https://render.com) account.
-- A [Google AI Studio](https://aistudio.google.com/) API Key (for Gemini).
+## 📋 Prerequisites
 
-### 2. Database Setup (PostgreSQL)
-1. In Render, click **New** -> **PostgreSQL**.
-2. Give it a name (e.g., `kliniq-db`).
-3. Click **Create Database**.
-4. Once it's created, copy the **Internal Database URL** (or External if you want to connect from your local machine).
+- **Python**: 3.12.8 (Pinned via `.python-version`)
+- **Database**: PostgreSQL 15+
+- **Git**: For version control
+- **Accounts**: GitHub, Render, and optionally [Google AI Studio](https://aistudio.google.com/) (for Gemini) or [Modal](https://modal.com) (for N-ATLaS).
 
-### 3. Deploying the API
-1. Fork this repository to your GitHub.
-2. In Render, click **New** -> **Web Service**.
-3. Connect your forked repository.
-4. **Environment:** `Python`
-5. **Build Command:** `pip install -r requirements.txt`
-6. **Start Command:** `gunicorn -k uvicorn.workers.UvicornWorker src.main:app`
-   - *Note: We've already added `gunicorn` to the requirements for you.*
+---
 
-### 4. Important Environment Variables
-Click on **Environment** in Render and add these:
-- `DATABASE_URL`: Your PostgreSQL URL.
-- `LLM_PROVIDER`: `gemini` (Standard) or `natlas` (Specialist).
-- `GOOGLE_API_KEY`: Your Gemini API key.
-- `SECRET_KEY`: A random long string for security.
-- `RENDER_EXTERNAL_URL`: The URL Render gives you for this service.
-- `ALLOWED_ORIGINS`: Your Vercel URL (e.g., `https://your-ui.vercel.app`).
+## 🛠️ Local Development Setup
 
-### 5. Switching to N-ATLaS (The Specialist Route)
-If you want to use the custom Nigerian-adapted model:
-1. Sign up for [Modal](https://modal.com).
-2. Deploy the code in `src/common/llm/modal_app.py` to your Modal account.
-3. Update your Render variables:
-   - `LLM_PROVIDER=natlas`
-   - `MODAL_ENDPOINT_URL=https://your-modal-app.modal.run/generate`
+1.  **Clone the Repository**:
+    ```bash
+    git clone https://github.com/your-username/kliniq-api.git
+    cd kliniq-api
+    ```
 
-### 💡 Pro-Tip: The "Self-Ping"
-We've included a script (`src/common/utils/self_ping.py`) that pings your API every 14 minutes. This keeps your Render "Free" instance awake so users don't have to wait for it to wake up!
+2.  **Create a Virtual Environment**:
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # Windows: venv\Scripts\activate
+    ```
 
-Happy coding! 🏥
+3.  **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4.  **Configure Environment**:
+    Copy the template file and fill in your details:
+    ```bash
+    cp .env.example .env
+    ```
+
+5.  **Run Migrations**:
+    Ensure your local Postgres is running, then applies the schema:
+    ```bash
+    alembic upgrade head
+    ```
+
+6.  **Start Server**:
+    ```bash
+    uvicorn src.main:app --reload
+    ```
+
+---
+
+## ☁️ Deploying to Render
+
+### 1. Database Setup
+- Create a new **PostgreSQL** instance on Render.
+- Copy the **Internal Database URL**.
+
+### 2. Web Service Deployment
+- Create a new **Web Service** on Render connected to your fork.
+- **Runtime**: `Python`
+- **Build Command**: `pip install -r requirements.txt`
+- **Start Command**: `gunicorn -k uvicorn.workers.UvicornWorker src.main:app`
+
+### 3. Required Environment Variables
+Add these in the Render "Environment" tab:
+- `DATABASE_URL`: Your Postgres URL.
+- `LLM_PROVIDER`: `gemini` (default) or `natlas`.
+- `GOOGLE_API_KEY`: Required if using Gemini.
+- `JWT_SECRET`: A secure random string for authentication.
+- `ALLOWED_ORIGINS`: Comma-separated list of permitted frontend URLs (e.g., `https://your-ui.vercel.app`).
+- `RENDER_EXTERNAL_URL`: Your service's public URL (to enable the Self-Ping feature).
+
+---
+
+## 🤖 LLM Provider Configuration
+
+### Option A: Google Gemini (Recommended)
+- **Settings**: `LLM_PROVIDER=gemini`
+- **Requirement**: A valid `GOOGLE_API_KEY`.
+- **Pros**: Fast, highly reliable tool-calling, and extremely easy to set up.
+
+### Option B: N-ATLaS (Specialist)
+- **Settings**: `LLM_PROVIDER=natlas`
+- **Requirement**: Modal deployment or access to existing N-ATLaS endpoints.
+- **Endpoints**:
+    - `MODAL_ENDPOINT_URL`: The inference endpoint.
+    - `MODAL_ASR_URL`: The transcription endpoint.
+
+---
+
+## 💡 Pro-Tips
+
+- **Keep-Alive**: The API includes a background task (`src/common/utils/self_ping.py`) that pings itself every 14 minutes. This prevents Render from spinning down your free instance.
+- **Security**: Never commit your `.env` file. We have updated `.gitignore` to protect your credentials while allowing `.env.example` to be shared.
+
+Happy Coding! 🏥🚀
