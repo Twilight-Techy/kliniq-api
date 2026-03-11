@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     JWT_EXPIRATION_MINUTES: int
     ALLOWED_ORIGINS: List[str] = ["*"]
     LOG_LEVEL: str = "info"
+    RENDER_EXTERNAL_URL: str = ""
 
     # Email settings
     EMAIL_SENDER: str
