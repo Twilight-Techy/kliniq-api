@@ -9,7 +9,7 @@ import jwt
 
 from src.common.config import settings
 from src.common.database.database import get_db_session
-from src.models.models import User
+from src.models.models import User, UserRole
 
 bearer_scheme = HTTPBearer()
 
@@ -46,3 +46,21 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
     return user
+
+
+async def require_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Dependency for admin-only endpoints.
+
+    get_current_user already proves the caller holds a valid token; this adds
+    the role check so hospital-wide data is never served to a patient or a
+    clinician who simply knows the URL.
+    """
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This area is restricted to hospital administrators.",
+        )
+    return current_user

@@ -115,6 +115,7 @@ async def seed_all_data(db: AsyncSession):
     patient_user, patient = await create_patient(db)
     nurse_user, nurse = await create_nurse(db, hospital)
     doctor_user, doctor = await create_doctor(db, hospital, department)
+    admin_user, admin_clinician = await create_admin(db, hospital)
     
     await link_patient_to_hospital(db, patient, hospital)
     
@@ -135,6 +136,7 @@ async def seed_all_data(db: AsyncSession):
     print(f"   Patient: dayo@test.com / {TEST_PASSWORD}")
     print(f"   Nurse:   ngozi@test.com / {TEST_PASSWORD}")
     print(f"   Doctor:  emeka@test.com / {TEST_PASSWORD}")
+    print(f"   Admin:   admin@test.com / {TEST_PASSWORD}")
     print("=" * 50 + "\n")
 
 
@@ -257,6 +259,45 @@ async def create_nurse(db: AsyncSession, hospital: Hospital) -> tuple[User, Clin
     db.add(clinician)
     await db.flush()
     
+    return user, clinician
+
+
+async def create_admin(db: AsyncSession, hospital: Hospital) -> tuple[User, Clinician]:
+    """Create the hospital administrator used by the /admin portal."""
+    print("🏥 Creating hospital administrator...")
+
+    user = User(
+        email="admin@test.com",
+        password_hash=HASHED_PASSWORD,
+        role=UserRole.ADMIN,
+        first_name="Folake",
+        last_name="Adewale",
+        phone="+234 802 000 1122",
+        email_verified=True,
+        is_active=True,
+        last_login=datetime.now(timezone.utc)
+    )
+    db.add(user)
+    await db.flush()
+
+    # The admin is tied to a hospital through a Clinician row, which is how
+    # the admin endpoints resolve which hospital to report on.
+    clinician = Clinician(
+        user_id=user.id,
+        hospital_id=hospital.id,
+        role_type=ClinicianRoleType.DOCTOR,
+        specialty="Hospital Administration",
+        years_of_experience=12,
+        bio="Hospital administrator overseeing clinical operations.",
+        rating=Decimal("0.0"),
+        total_consultations=0,
+        total_points=0,
+        status=ClinicianStatus.ACTIVE,
+        is_available=False
+    )
+    db.add(clinician)
+    await db.flush()
+
     return user, clinician
 
 
