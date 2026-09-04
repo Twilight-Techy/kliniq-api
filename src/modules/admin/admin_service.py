@@ -459,6 +459,8 @@ async def list_reports(db: AsyncSession, admin: User) -> dict:
                 "file_size_bytes": r.file_size_bytes,
                 "page_count": r.page_count,
                 "summary": r.summary,
+                "highlights": r.highlights or [],
+                "metrics": r.metrics or {},
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in rows
